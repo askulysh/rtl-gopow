@@ -3,13 +3,20 @@ package gopow
 import (
 	"fmt"
 	"image"
+	"image/color"
+	"bytes"
+	"strconv"
+	"io/ioutil"
 	"math"
 	"time"
+	"strings"
 
 	"github.com/dustin/go-humanize"
 	"github.com/golang/freetype"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/image/font"
+
+	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/dhogborg/rtl-gopow/internal/resources"
 )
@@ -89,7 +96,7 @@ func (a *Annotator) DrawXScale() error {
 	}).Debug("annotate X scale")
 
 	// how many samples?
-	count := int(math.Floor(float64(a.table.Bins) / float64(350)))
+	count := int(math.Floor(float64(a.table.Bins) / float64(100)))
 
 	hzPerLabel := float64(a.table.HzHigh-a.table.HzLow) / float64(count)
 	pxPerLabel := int(math.Floor(float64(a.table.Bins) / float64(count)))
@@ -116,6 +123,66 @@ func (a *Annotator) DrawXScale() error {
 		// draw the text
 		pt := freetype.Pt(px+5, 17)
 		_, _ = a.context.DrawString(str, pt)
+
+	}
+
+	xStart := (math.Floor(a.table.HzLow/10000) + 1)*10000
+	hzpp := (a.table.HzHigh-a.table.HzLow)/float64(a.table.Bins)
+	log.WithFields(log.Fields{
+		"xStart": xStart,
+		"hzpp": hzpp,
+	}).Debug("annotate X scale2")
+
+	for x := xStart; x < a.table.HzHigh; x += 10000 {
+		px := int((x - a.table.HzLow)/hzpp)
+		l := 10
+		if int(x) % 100000 == 0 {
+			l= 20
+		}
+		for i := 0; i < l; i++ {
+			a.image.Set(px, i, color.RGBA{255, 0, 0, 255})
+		}
+	}
+
+	buff, err := ioutil.ReadFile("freq_list")
+	if err != nil {
+		return err
+	}
+
+	imgSize := a.image.Bounds().Size()
+
+	lines := bytes.Split(buff, []byte("\n"))
+	for _, l := range lines {
+		arr := strings.Split(string(l), " ")
+		freq, _ := strconv.ParseInt(arr[0], 10, 64)
+		if freq == 0 {
+			break
+		}
+		jumps:=0
+		if float64(freq) < a.table.HzLow ||
+		   float64(freq) > a.table.HzHigh {
+			continue
+		}
+		px := int((float64(freq) - a.table.HzLow)/hzpp)
+                for i := 1; i < imgSize.Y-1; i++ {
+			if math.Abs(a.table.Rows[i].Sample(px)-
+			a.table.Rows[i-1].Sample(px)) > 15 {
+				jumps = jumps + 1
+			}
+		}
+		col, _ := colorful.Hex("#FFFFFF")
+		if jumps > 2 {
+			fmt.Printf("%d\n", freq)
+			col, _ = colorful.Hex(arr[1])
+		}
+		for i := 0; i < imgSize.Y-1; i++ {
+			a.image.Set(px, i, col)
+
+		}
+		log.WithFields(log.Fields{
+			"f":  freq,
+			"jumps":  jumps,
+		}).Debug("freq")
 
 	}
 
