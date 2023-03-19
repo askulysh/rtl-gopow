@@ -35,13 +35,18 @@ type Annotator struct {
 	table *TableComplex
 
 	context *freetype.Context
+	level   float64
+	delta   float64
 }
 
-func NewAnnotator(img *image.RGBA, table *TableComplex) (*Annotator, error) {
+func NewAnnotator(img *image.RGBA, table *TableComplex,
+		  level float64, delta int) (*Annotator, error) {
 
 	a := &Annotator{
 		image: img,
 		table: table,
+		level: level,
+		delta: float64(delta),
 	}
 
 	err := a.init()
@@ -158,20 +163,28 @@ func (a *Annotator) DrawXScale() error {
 		if freq == 0 {
 			break
 		}
-		jumps:=0
 		if float64(freq) < a.table.HzLow ||
 		   float64(freq) > a.table.HzHigh {
 			continue
 		}
 		px := int((float64(freq) - a.table.HzLow)/hzpp)
+		jumps:=0
+		min := 256.0
+		max:= -256.0
                 for i := 1; i < imgSize.Y-1; i++ {
+			if a.table.Rows[i].Sample(px) < min {
+				min = a.table.Rows[i].Sample(px)
+			}
+			if a.table.Rows[i].Sample(px) > max {
+				max = a.table.Rows[i].Sample(px)
+			}
 			if math.Abs(a.table.Rows[i].Sample(px)-
-			a.table.Rows[i-1].Sample(px)) > 15 {
+			a.table.Rows[i-1].Sample(px)) > a.delta {
 				jumps = jumps + 1
 			}
 		}
 		col, _ := colorful.Hex("#FFFFFF")
-		if jumps > 2 {
+		if jumps > 2 && max > a.level {
 			fmt.Printf("%d\n", freq)
 			col, _ = colorful.Hex(arr[1])
 		}
@@ -182,6 +195,8 @@ func (a *Annotator) DrawXScale() error {
 		log.WithFields(log.Fields{
 			"f":  freq,
 			"jumps":  jumps,
+                        "min":  min,
+			"max":  max,
 		}).Debug("freq")
 
 	}

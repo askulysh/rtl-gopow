@@ -75,6 +75,16 @@ func main() {
 			Value: 0,
 			Usage: "Define a manual minimum power (format nn.n)",
 		},
+                cli.Float64Flag{
+			Name:  "level,l",
+			Value: 0,
+			Usage: "Define a manual minimum high level (format nn.n)",
+		},
+                cli.IntFlag{
+			Name:  "delta,d",
+			Value: 0,
+			Usage: "Define a levels delta (format nn)",
+		},
 		cli.BoolFlag{
 			Name:  "verbose",
 			Usage: "Enable more verbose output",

@@ -25,6 +25,8 @@ type RunConfig struct {
 	MaxPower    float64
 	MinPower    float64
 	Palette     string
+	Level       float64
+	Delta       int
 }
 
 type GoPow struct {
@@ -42,6 +44,8 @@ func NewGoPow(c *cli.Context) (*GoPow, error) {
 		MaxPower:    c.Float64("max-power"),
 		MinPower:    c.Float64("min-power"),
 		Palette:     c.String("palette"),
+		Level:       c.Float64("level"),
+		Delta:       c.Int("delta"),
 	}
 
 	if !c.IsSet("max-power") {
@@ -71,6 +75,12 @@ func NewGoPow(c *cli.Context) (*GoPow, error) {
 	}).Info("GoPow init")
 	log.WithFields(log.Fields{
 		"format": config.Format,
+	}).Info("GoPow init")
+        log.WithFields(log.Fields{
+		"l": config.Level,
+	}).Info("GoPow init")
+        log.WithFields(log.Fields{
+		"delta": config.Delta,
 	}).Info("GoPow init")
 
 	g := &GoPow{
@@ -116,7 +126,8 @@ func (g *GoPow) Render() error {
 	}
 
 	if g.config.Annotations {
-		annotator, err := NewAnnotator(g.image, table)
+		annotator, err := NewAnnotator(g.image, table,
+				g.config.Level, g.config.Delta)
 		if err != nil {
 			return err
 		}
