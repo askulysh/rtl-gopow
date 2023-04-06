@@ -93,6 +93,109 @@ func (a *Annotator) init() error {
 	return nil
 }
 
+func (a *Annotator) Estimate(freq int64) float64 {
+
+	hzpp := (a.table.HzHigh-a.table.HzLow)/float64(a.table.Bins)
+	px := int((float64(freq) - a.table.HzLow)/hzpp)
+	jumps:=0
+	high:= 0.0
+	low:= 0.0
+	high_cnt := 0
+	low_cnt := 0
+	min :=  1000.0
+	max := -1000.0
+	sum := 0.0
+	imgSize := a.table.Image().Bounds().Size()
+	for i := 1; i < imgSize.Y-1; i++ {
+		if a.table.Rows[i].Sample(px) < min {
+			min = a.table.Rows[i].Sample(px)
+		}
+		if a.table.Rows[i].Sample(px) > max {
+			max = a.table.Rows[i].Sample(px)
+		}
+		sum += a.table.Rows[i].Sample(px)
+	}
+	mean := sum/float64(imgSize.Y)
+	lvl := a.level
+	if max < lvl || min > lvl {
+		lvl = mean
+	}
+	for i := 1; i < imgSize.Y-1; i++ {
+		if a.table.Rows[i].Sample(px) < lvl {
+			low +=  a.table.Rows[i].Sample(px)
+				low_cnt++
+		} else {
+			high += a.table.Rows[i].Sample(px)
+			high_cnt++
+		}
+		if math.Abs(a.table.Rows[i].Sample(px)-
+		   a.table.Rows[i-1].Sample(px)) > a.delta {
+			jumps = jumps + 1
+		}
+	}
+	noise := low/float64(low_cnt)
+	SNR:= 0.0
+	if low_cnt > 0 {
+		SNR = low/float64(low_cnt)
+		if high_cnt > 0 {
+			SNR = high/float64(high_cnt) - SNR
+		}
+	}
+	snrMax := max - noise
+	log.WithFields(log.Fields{
+		"lvl": math.Round(lvl),
+		"min": math.Round(min),
+		"max": math.Round(max),
+		"mean": math.Round(mean),
+		"jumps":  jumps,
+		"est pkts:": 100*imgSize.Y*high_cnt/(high_cnt+low_cnt)/3,
+		"high ratio":  100*high_cnt/(high_cnt+low_cnt),
+		"noise lvl":  math.Round(noise),
+		"SNR": math.Round(SNR),
+		"SNRmax": math.Round(snrMax),
+		"F":  freq,
+	}).Debug("freq")
+
+	return snrMax
+}
+
+func (a *Annotator) FindCarriers() error {
+
+	buff, err := ioutil.ReadFile("freq_list")
+	if err != nil {
+		return err
+	}
+
+	imgSize := a.image.Bounds().Size()
+	hzpp := (a.table.HzHigh-a.table.HzLow)/float64(a.table.Bins)
+
+	lines := bytes.Split(buff, []byte("\n"))
+	for _, l := range lines {
+		arr := strings.Split(string(l), " ")
+		freq, _ := strconv.ParseInt(arr[0], 10, 64)
+		if freq == 0 {
+			break
+		}
+		if float64(freq) < a.table.HzLow ||
+		   float64(freq) > a.table.HzHigh {
+			continue
+		}
+		snr := a.Estimate(freq)
+		col, _ := colorful.Hex("#FFFFFF")
+		if snr > 10.0 {
+			fmt.Printf("%d\n", freq)
+			col, _ = colorful.Hex(arr[1])
+		}
+		px := int((float64(freq) - a.table.HzLow)/hzpp)
+		for i := 0; i < imgSize.Y-1; i++ {
+			a.image.Set(px, i, col)
+
+		}
+	}
+
+	return nil
+}
+
 func (a *Annotator) DrawXScale() error {
 
 	log.WithFields(log.Fields{
@@ -149,57 +252,7 @@ func (a *Annotator) DrawXScale() error {
 		}
 	}
 
-	buff, err := ioutil.ReadFile("freq_list")
-	if err != nil {
-		return err
-	}
-
-	imgSize := a.image.Bounds().Size()
-
-	lines := bytes.Split(buff, []byte("\n"))
-	for _, l := range lines {
-		arr := strings.Split(string(l), " ")
-		freq, _ := strconv.ParseInt(arr[0], 10, 64)
-		if freq == 0 {
-			break
-		}
-		if float64(freq) < a.table.HzLow ||
-		   float64(freq) > a.table.HzHigh {
-			continue
-		}
-		px := int((float64(freq) - a.table.HzLow)/hzpp)
-		jumps:=0
-		min := 256.0
-		max:= -256.0
-                for i := 1; i < imgSize.Y-1; i++ {
-			if a.table.Rows[i].Sample(px) < min {
-				min = a.table.Rows[i].Sample(px)
-			}
-			if a.table.Rows[i].Sample(px) > max {
-				max = a.table.Rows[i].Sample(px)
-			}
-			if math.Abs(a.table.Rows[i].Sample(px)-
-			a.table.Rows[i-1].Sample(px)) > a.delta {
-				jumps = jumps + 1
-			}
-		}
-		col, _ := colorful.Hex("#FFFFFF")
-		if jumps > 2 && max > a.level {
-			fmt.Printf("%d\n", freq)
-			col, _ = colorful.Hex(arr[1])
-		}
-		for i := 0; i < imgSize.Y-1; i++ {
-			a.image.Set(px, i, col)
-
-		}
-		log.WithFields(log.Fields{
-			"f":  freq,
-			"jumps":  jumps,
-                        "min":  min,
-			"max":  max,
-		}).Debug("freq")
-
-	}
+	a.FindCarriers()
 
 	return nil
 }
