@@ -10,6 +10,7 @@ import (
 	"math"
 	"time"
 	"strings"
+	"container/heap"
 
 	"github.com/dustin/go-humanize"
 	"github.com/golang/freetype"
@@ -37,16 +38,18 @@ type Annotator struct {
 	context *freetype.Context
 	level   float64
 	delta   float64
+	jobs    int
 }
 
 func NewAnnotator(img *image.RGBA, table *TableComplex,
-		  level float64, delta int) (*Annotator, error) {
+		  level float64, delta int, jobs int) (*Annotator, error) {
 
 	a := &Annotator{
 		image: img,
 		table: table,
 		level: level,
 		delta: float64(delta),
+		jobs:  jobs,
 	}
 
 	err := a.init()
@@ -159,6 +162,33 @@ func (a *Annotator) Estimate(freq int64) float64 {
 	return snrMax
 }
 
+type Carrier struct {
+	snr float64
+	freq int64
+}
+
+type Carriers []Carrier
+
+func (h Carriers) Less(i, j int) bool {
+	return h[i].snr > h[j].snr
+}
+
+func (h Carriers) Len() int { return len(h) }
+
+func (h Carriers) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+func (h *Carriers) Push(x interface{}) {
+	*h = append(*h, x.(Carrier))
+}
+
+func (h *Carriers) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
 func (a *Annotator) FindCarriers() error {
 
 	buff, err := ioutil.ReadFile("freq_list")
@@ -168,6 +198,9 @@ func (a *Annotator) FindCarriers() error {
 
 	imgSize := a.image.Bounds().Size()
 	hzpp := (a.table.HzHigh-a.table.HzLow)/float64(a.table.Bins)
+
+	reqs := make([]int64, 0)
+	n := 0
 
 	lines := bytes.Split(buff, []byte("\n"))
 	for _, l := range lines {
@@ -180,13 +213,53 @@ func (a *Annotator) FindCarriers() error {
 		   float64(freq) > a.table.HzHigh {
 			continue
 		}
+		reqs = append(reqs,freq)
 		snr := a.Estimate(freq)
 		col, _ := colorful.Hex("#FFFFFF")
 		if snr > 10.0 {
 			fmt.Printf("%d\n", freq)
 			col, _ = colorful.Hex(arr[1])
+			if arr[1] != "#FF0000" {
+				n++
+			}
 		}
 		px := int((float64(freq) - a.table.HzLow)/hzpp)
+		for i := 0; i < imgSize.Y-1; i++ {
+			a.image.Set(px, i, col)
+
+		}
+	}
+        xStart := (int64(a.table.HzLow)/5000 + 1)*5000
+
+	found := &Carriers{}
+	heap.Init(found)
+
+	for x := xStart; x < int64(a.table.HzHigh); x += 5000 {
+		snr := a.Estimate(x)
+		heap.Push(found, Carrier{snr, x})
+	}
+	for found.Len() > 0 && n < a.jobs {
+		c:= heap.Pop(found).(Carrier)
+		skip := false
+		for _, f := range reqs {
+			d := f -c.freq
+			if d < 0 {
+				d = -d
+			}
+			if d < 10000 {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		n++
+		fmt.Printf("%d\n", c.freq)
+		reqs = append(reqs, c.freq)
+
+		col, _ := colorful.Hex("#FF00FF")
+		px := int((float64(c.freq) - a.table.HzLow)/hzpp)
 		for i := 0; i < imgSize.Y-1; i++ {
 			a.image.Set(px, i, col)
 

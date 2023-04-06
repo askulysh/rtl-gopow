@@ -85,6 +85,11 @@ func main() {
 			Value: 0,
 			Usage: "Define a levels delta (format nn)",
 		},
+                cli.IntFlag{
+			Name:  "jobs,j",
+			Value: 0,
+			Usage: "Define a number of jobs (format nn)",
+		},
 		cli.BoolFlag{
 			Name:  "verbose",
 			Usage: "Enable more verbose output",

@@ -27,6 +27,7 @@ type RunConfig struct {
 	Palette     string
 	Level       float64
 	Delta       int
+	Jobs        int
 }
 
 type GoPow struct {
@@ -46,6 +47,7 @@ func NewGoPow(c *cli.Context) (*GoPow, error) {
 		Palette:     c.String("palette"),
 		Level:       c.Float64("level"),
 		Delta:       c.Int("delta"),
+		Jobs:        c.Int("jobs"),
 	}
 
 	if !c.IsSet("max-power") {
@@ -65,6 +67,9 @@ func NewGoPow(c *cli.Context) (*GoPow, error) {
 
 	if config.OutputFile == "" {
 		config.OutputFile = config.InputFile + "." + config.Format
+	}
+	if !c.IsSet("jobs") {
+		config.Jobs = 0
 	}
 
 	log.WithFields(log.Fields{
@@ -127,7 +132,8 @@ func (g *GoPow) Render() error {
 
 	if g.config.Annotations {
 		annotator, err := NewAnnotator(g.image, table,
-				g.config.Level, g.config.Delta)
+				g.config.Level, g.config.Delta,
+				g.config.Jobs)
 		if err != nil {
 			return err
 		}
